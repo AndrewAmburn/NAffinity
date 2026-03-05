@@ -1,0 +1,2 @@
+PredictedClass: Weak/moderate binder
+ProbabilityStrongBinder: 0.16
