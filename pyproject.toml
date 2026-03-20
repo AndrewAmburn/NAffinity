@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "naffinity"
+version = "0.1.0"
+description = "NAffinity: a machine learning-based nucleic acid-ligand affinity classification pipeline"
+readme = "README.md"
+requires-python = "==3.10.*"
+license = { text = "MIT" }
+authors = [
+    { name = "Andrew Amburn" }
+]
+keywords = [
+    "nucleic-acid",
+    "ligand",
+    "affinity",
+    "machine-learning",
+    "bioinformatics",
+    "cheminformatics"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry"
+]
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn==1.3.2",
+    "biopython",
+    "joblib",
+    "rdkit"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff"
+]
+
+[project.scripts]
+naffinity = "naffinity.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

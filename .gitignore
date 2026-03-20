@@ -1,7 +1,42 @@
+# Python
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
 .ipynb_checkpoints/
-.env
-.venv
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs / temp
 *.log
+*.tmp
+*.bak
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local-only generated outputs
+*.local
+temp/
+tmp/

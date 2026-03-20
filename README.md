@@ -1,55 +1,66 @@
-# NAffinity: Nucleic Acid–Ligand Affinity Classifier  
-A machine learning-based tool for predicting nucleic acid–ligand binding strength from a nucleic acid–ligand complex PDB structure.
+# NAffinity: Nucleic Acid-Ligand Affinity Classifier
 
-## Installation Requirements  
+NAffinity is a machine learning-based tool for predicting nucleic acid-ligand binding strength from a nucleic acid-ligand complex structure.
 
-### 1. Setting Up the Environment  
-NAffinity requires a Conda environment. To install the necessary dependencies, follow these steps:
+## Installation
 
-#### Create the Conda Environment  
+Create and activate the Conda environment:
+
 ```bash
 conda env create -f environment.yml
 conda activate naffinity
 ```
 
-## Data Organization  
+To use the `naffinity` command-line interface, install NAffinity from the repository root:
 
-NAffinity requires a specific folder structure for proper execution. Each prediction is run on a **single complex folder** containing a PDB file of the nucleic acid–ligand complex.
+```bash
+pip install -e ".[dev]"
+```
 
-- **Folder Name:** The folder name must match the PDB filename (typically a PDB ID).
+## Required Input Folder Structure
+
+NAffinity expects one folder per nucleic acid-ligand complex. Each prediction is run on a single complex folder containing a PDB file of the bound complex.
+
+- **Folder name:** should match the PDB filename
 - **Required input file:**
-  - `<folder_name>.pdb` — PDB structure of the nucleic acid–ligand complex (must include both receptor and bound ligand)
+  - `<folder_name>.pdb` — PDB structure of the nucleic acid-ligand complex, including both receptor and bound ligand
 
 Example folder structure:
+
 ```text
 3GAO/
   3GAO.pdb
 ```
 
-During execution, NAffinity will generate the following files inside the same folder:
+During execution, NAffinity generates the following files inside the same folder:
+
 - `<folder_name>_lig.sd` — ligand extracted from the PDB file
 - `rdkit.txt` — RDKit ligand descriptors
 - `electro_hydro.txt` — electrostatic and hydrogen-bond proximity descriptors
-- `descriptors.txt` — additional ligand + binding-site descriptors
+- `descriptors.txt` — additional ligand and binding-site descriptors
 - `receptor_descriptors.txt` — receptor binding-site descriptors
 - `naffinity_predicted_binding_class.txt` — final prediction output
 
-Ensure the input PDB is present and named correctly before running NAffinity.
+## Usage
 
----
-
-## Running NAffinity  
-
-### Run the Full Pipeline for a Single Complex  
-From the top-level `NAffinity` directory, run:
+Run the full pipeline for a single complex:
 
 ```bash
-python3 naffinity.py <folder_path>
+naffinity run <folder_path>
 ```
 
 Example:
+
 ```bash
-python3 naffinity.py example/3GAO
+naffinity run example/3GAO
+```
+
+Optional arguments:
+
+```bash
+naffinity run <folder_path> --overwrite
+naffinity run <folder_path> --jobs 4
+naffinity run <folder_path> --python /path/to/python
 ```
 
 ### Output  
@@ -71,7 +82,7 @@ This file contains:
 
 ---
 
-## Running the Included Example  
+## Included Example
 
 NAffinity includes an example nucleic acid–ligand complex to verify correct installation.
 
@@ -88,8 +99,11 @@ NAffinity/example/3GAO
 
 ### Run the Example  
 ```bash
+cd NAffinity
 conda activate naffinity
-python3 naffinity.py example/3GAO
+pip install -e ".[dev]" 
+
+naffinity run example/3GAO
 ```
 
 ### Expected Output  
