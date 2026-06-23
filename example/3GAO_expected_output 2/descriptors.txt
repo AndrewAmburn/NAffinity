@@ -13,7 +13,7 @@ NumBindingSiteAtoms: 102.0
 NumWaterMolecules: 12.0
 MinDistCofactor: 1.8688123810386577e-08
 NumPhosphateContacts: 0.0
-NumHbondCandidates: 33.0
+NumContacts_3_5A: 33.0
 NumBaseCentroidContacts: 4.0
 BindingPocketVolume: 1060.253951919319
 ElectrostaticScore: 0.0

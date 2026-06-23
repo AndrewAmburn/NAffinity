@@ -464,7 +464,7 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
             sum(q / max(d, 1e-6) for q, d in zip(charge_products, distances))
         ) if distances else 0.0
 
-        feats["NetChargeGradient"] = float(sum(abs(e) for e in electro_energies)) if electro_energies else 0.0
+        feats["TotalElectrostaticMagnitude"] = float(sum(abs(e) for e in electro_energies)) if electro_energies else 0.0
         feats["ElectrostaticVariance"] = float(np.var(electro_energies)) if electro_energies else 0.0
         feats["StericClashCount"] = float(steric_clashes)
 

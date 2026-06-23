@@ -258,7 +258,7 @@ def compute_binding_site_features(ligand_coords, rna_atoms, water_atoms, metal_a
         "NumWaterMolecules": float(len(set(a.get_parent() for a in local_water_atoms))),
         "MinDistCofactor": float(min_cofactor_dist),
         "NumPhosphateContacts": float(phosphate_contacts),
-        "NumHbondCandidates": float(hbond_count),
+        "NumContacts_3_5A": float(hbond_count),
         "NumBaseCentroidContacts": float(pi_stack_count),
         "BindingPocketVolume": float(pocket_volume),
         "ElectrostaticScore": float(electrostatic_score),

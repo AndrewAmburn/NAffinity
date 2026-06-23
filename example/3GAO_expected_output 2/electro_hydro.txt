@@ -17,10 +17,9 @@ MinAttractiveElectrostaticEnergy: -0.0657
 MinLigandPartialCharge: -0.3767
 NearbyAcceptors: 9.0000
 NearbyDonors: 4.0000
-NetChargeGradient: 5.9510
 PolarHydrophobicProximityScore: 34.0000
 PolarSurfaceContactCount: 13.0000
 StericClashCount: 24.0000
 SumNegativeReceptorCharge: -119.3000
 SumPositiveReceptorCharge: 0.0000
-TotalElectrostaticMagnitude: 0.0000
+TotalElectrostaticMagnitude: 5.9510
