@@ -1,8 +1,8 @@
 # NAffinity: Nucleic Acid-Ligand Affinity Classifier
 
-NAffinity is a machine learning-based tool for predicting nucleic acid-ligand binding strength from a nucleic acid-ligand complex structure.
+NAffinity is a machine learning-based tool for predicting nucleic acid–ligand binding strength from three-dimensional nucleic acid–ligand complex structures. The software supports both single-complex prediction and batch processing workflows for large-scale screening of experimentally determined, docked, or modeled nucleic acid–ligand complexes.
 
-## Installation
+# Installation
 
 Create and activate the Conda environment:
 
@@ -19,7 +19,7 @@ pip install -e ".[dev]"
 
 ## Required Input Folder Structure
 
-NAffinity expects one folder per nucleic acid-ligand complex. Each prediction is run on a single complex folder containing a PDB file of the bound complex.
+NAffinity operates on one nucleic acid–ligand complex per folder. Each complex must contain a PDB structure in which the ligand has already been positioned within the nucleic acid binding site. Ligand placement may originate from an experimental holo structure or from an external docking workflow.
 
 - **Folder name:** should match the PDB filename
 - **Required input file:**
@@ -41,6 +41,84 @@ During execution, NAffinity generates the following files inside the same folder
 - `receptor_descriptors.txt` — receptor binding-site descriptors
 - `naffinity_predicted_binding_class.txt` — final prediction output
 
+During batch execution, NAffinity additionally produces:
+
+- `batch_results.csv` — summary table containing predictions for all processed complexes
+
+Note: NAffinity does not perform docking internally. Input structures must already contain the ligand in its predicted or experimentally determined binding pose.
+
+## Reproducibility
+
+**NAffinity includes the complete dataset, train/test split assignments, training scripts, and hyperparameter optimization workflows used in the manuscript.**
+
+### **Dataset**
+
+**The dataset used for model development is provided in:**
+
+```text
+data/naffinity_dataset.csv
+```
+
+**The dataset contains a `Split` column indicating the exact train/test assignments used throughout the study:**
+
+- **Train** — complexes used for model training and hyperparameter optimization
+- **Stratified** — held-out test complexes used for final model evaluation
+
+### **Training**
+
+**The complete model training workflow is provided in:**
+
+```text
+training/train_naffinity.py
+```
+
+**This script includes:**
+
+- **Data loading**
+- **Label parsing**
+- **Feature preprocessing**
+- **Removal of constant features**
+- **Random Forest model fitting**
+- **Held-out test set evaluation**
+
+### **Hyperparameter Optimization**
+
+**The hyperparameter optimization workflow is provided in:**
+
+```text
+training/hyperparameter_search.py
+```
+
+**The following hyperparameters were optimized using ten-fold stratified cross-validation:**
+
+- **n_estimators**
+- **max_depth**
+- **min_samples_split**
+- **min_samples_leaf**
+- **bootstrap**
+- **class_weight**
+
+### **Random Seeds**
+
+**All analyses reported in the manuscript used:**
+
+```text
+RANDOM_STATE = 42
+```
+
+### **Final Model Parameters**
+
+**The final model selected through hyperparameter optimization used:**
+
+```text
+n_estimators = 300
+max_depth = 10
+min_samples_split = 5
+min_samples_leaf = 2
+bootstrap = False
+class_weight = "balanced"
+```
+
 ## Usage
 
 Run the full pipeline for a single complex:
@@ -58,9 +136,7 @@ naffinity run example/3GAO
 Optional arguments:
 
 ```bash
-naffinity run <folder_path> --overwrite
 naffinity run <folder_path> --jobs 4
-naffinity run <folder_path> --python /path/to/python
 ```
 
 ### Output  
@@ -74,7 +150,56 @@ This file contains:
 - `PredictedClass` — `Strong binder` or `Weak/moderate binder`
 - `ProbabilityStrongBinder` — probability score (0.00–1.00)
 
+Predictions are reported as:
+
+- Strong binder: Kd < 1 μM
+
+- Weak/moderate binder: Kd ≥ 1 μM
+
 ---
+
+
+## Batch Processing
+
+NAffinity supports batch processing of multiple nucleic acid–ligand complexes for large-scale screening workflows. 
+
+Run all complex folders contained within a parent directory:
+
+```bash
+naffinity batch <parent_directory>
+```
+
+Example:
+
+```bash
+naffinity batch example/
+```
+
+Optional arguments:
+
+```bash
+naffinity batch <parent_directory> --jobs 4
+```
+
+During batch execution, each subdirectory is processed independently and predictions are aggregated into a summary file:
+
+```text
+<parent_directory>/batch_results.csv
+```
+The summary file contains:
+
+- `Complex` — complex folder name
+- `PredictedClass` — predicted affinity class (`Strong binder` or `Weak/moderate binder`)
+- `ProbabilityStrongBinder` — predicted probability of strong binding
+
+Example:
+
+```text
+Complex,PredictedClass,ProbabilityStrongBinder
+1AJU,Weak/moderate binder,0.28
+1EVV_Neomycin,Strong binder,0.51
+2GDI,Strong binder,0.81
+```
 
 ## Notes  
 - NAffinity assumes the input structure is already a **bound complex** with the ligand placed in the binding site.

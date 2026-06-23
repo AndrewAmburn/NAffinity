@@ -103,47 +103,73 @@ def compute_rdkit_descriptors_from_sd(sd_path: str):
     desc_3d = getMolDescriptors3D(mol)
     return {**desc_2d, **desc_3d}
 
+def run(
+    folder,
+    ligand_sd=None,
+    out="rdkit.txt",
+    overwrite=False,
+):
+    folder = os.path.abspath(folder)
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("dir", help="Directory containing (folder_name)_lig.sd")
-    ap.add_argument("--ligand-sd", default=None, help="Optional override ligand SD filename (in the directory)")
-    ap.add_argument("--out", default="rdkit.txt", help="Output filename to write inside the directory (default: rdkit.txt)")
-    ap.add_argument("--overwrite", action="store_true", help="Overwrite existing output file if present")
-    args = ap.parse_args()
-
-    folder = os.path.abspath(args.dir)
     if not os.path.isdir(folder):
-        print(f"ERROR: Not a directory: {folder}", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Not a directory: {folder}")
 
     folder_name = os.path.basename(os.path.normpath(folder))
 
-    ligand_sd = args.ligand_sd if args.ligand_sd else f"{folder_name}_lig.sd"
+    ligand_sd = ligand_sd if ligand_sd else f"{folder_name}_lig.sd"
     sd_path = os.path.join(folder, ligand_sd)
-    out_path = os.path.join(folder, args.out)
+    out_path = os.path.join(folder, out)
 
     if not os.path.exists(sd_path):
-        print(f"ERROR: Missing ligand SD file: {sd_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Missing ligand SD file: {sd_path}")
 
-    if os.path.exists(out_path) and not args.overwrite:
-        print(f"⏭️ Skipping {folder_name} ({args.out} already exists)")
-        print(f"Wrote: {out_path}")
-        return
 
-    try:
-        desc = compute_rdkit_descriptors_from_sd(sd_path)
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+    desc = compute_rdkit_descriptors_from_sd(sd_path)
 
     with open(out_path, "w") as f:
         for k, v in desc.items():
             f.write(f"{k}: {v}\n")
 
-    print(f"✅ Wrote {args.out} for {folder_name}")
-    print(f"Wrote: {out_path}")
+
+    return out_path
+
+def main():
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument(
+        "dir",
+        help="Directory containing (folder_name)_lig.sd"
+    )
+
+    ap.add_argument(
+        "--ligand-sd",
+        default=None,
+        help="Optional override ligand SD filename"
+    )
+
+    ap.add_argument(
+        "--out",
+        default="rdkit.txt",
+    )
+
+    ap.add_argument(
+        "--overwrite",
+        action="store_true",
+    )
+
+    args = ap.parse_args()
+
+    try:
+        run(
+            args.dir,
+            ligand_sd=args.ligand_sd,
+            out=args.out,
+            overwrite=args.overwrite,
+        )
+
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

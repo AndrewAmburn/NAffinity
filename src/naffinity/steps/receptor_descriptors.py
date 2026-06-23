@@ -28,7 +28,11 @@ from Bio.PDB import PDBParser
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from scipy.spatial import cKDTree
+import warnings
 
+from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
+warnings.simplefilter("ignore", PDBConstructionWarning)
 
 def generate_receptor_descriptors(ligand_file: str, pdb_file: str, out_file: str, radius: float = 6.0):
     bases_fixed = ["A", "U", "C", "G"]
@@ -213,6 +217,50 @@ def generate_receptor_descriptors(ligand_file: str, pdb_file: str, out_file: str
         for key in ordered_keys:
             f.write(f"{key}: {features.get(key, 0)}\n")
 
+def run(
+    folder,
+    radius=6.0,
+    out="receptor_descriptors.txt",
+):
+    folder = os.path.abspath(folder)
+
+    folder_name = os.path.basename(
+        os.path.normpath(folder)
+    )
+
+    ligand_path = os.path.join(
+        folder,
+        f"{folder_name}_lig.sd"
+    )
+
+    pdb_path = os.path.join(
+        folder,
+        f"{folder_name}.pdb"
+    )
+
+    out_path = os.path.join(
+        folder,
+        out
+    )
+
+    if not os.path.exists(ligand_path):
+        raise FileNotFoundError(
+            f"Missing ligand file: {ligand_path}"
+        )
+
+    if not os.path.exists(pdb_path):
+        raise FileNotFoundError(
+            f"Missing PDB file: {pdb_path}"
+        )
+
+    generate_receptor_descriptors(
+        ligand_path,
+        pdb_path,
+        out_path,
+        radius=radius,
+    )
+
+    return out_path
 
 def main():
     ap = argparse.ArgumentParser()
@@ -240,18 +288,19 @@ def main():
         sys.exit(1)
 
     if os.path.exists(out_path) and not args.overwrite:
-        print(f"⏭️ Skipping {folder_name} ({args.out} already exists)")
-        print(f"Wrote: {out_path}")
+
         return
 
     try:
-        generate_receptor_descriptors(ligand_path, pdb_path, out_path, radius=args.radius)
+        written = run(
+            folder,
+            radius=args.radius,
+            out=args.out,
+        )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"✅ Wrote {args.out} for {folder_name}")
-    print(f"Wrote: {out_path}")
 
 
 if __name__ == "__main__":

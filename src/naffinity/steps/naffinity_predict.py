@@ -86,6 +86,11 @@ class CorrelationFilter(BaseEstimator, TransformerMixin):
         X = pd.DataFrame(X)
         return X.reindex(columns=self.keep_cols_, fill_value=0.0)
 
+import __main__
+
+__main__.NumericCleaner = NumericCleaner
+__main__.DropConstantColumns = DropConstantColumns
+__main__.CorrelationFilter = CorrelationFilter
 
 def script_dir() -> str:
     return os.path.dirname(os.path.abspath(__file__))
@@ -147,68 +152,153 @@ def predict(model, X: pd.DataFrame):
 
     return pred_int, prob_strong
 
+def run(
+    folder,
+    model_path=None,
+    out="naffinity_predicted_binding_class.txt",
+    feature_files=None,
+):
+    folder = os.path.abspath(folder)
+
+    if feature_files is None:
+        feature_files = [
+            "descriptors.txt",
+            "rdkit.txt",
+            "receptor_descriptors.txt",
+            "electro_hydro.txt",
+        ]
+
+    if model_path is None:
+        model_path = default_model_path()
+
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Model not found: {model_path}"
+        )
+
+    X = load_features_from_folder(
+        folder,
+        feature_files=feature_files,
+    )
+
+    model = joblib.load(model_path)
+
+    pred_int, prob_strong = predict(
+        model,
+        X,
+    )
+
+    pred_label = (
+        "Strong binder"
+        if pred_int == 1
+        else "Weak/moderate binder"
+    )
+
+    out_path = os.path.join(
+        folder,
+        out,
+    )
+
+    with open(out_path, "w") as f:
+        f.write(
+            f"PredictedClass: {pred_label}\n"
+        )
+
+        if np.isfinite(prob_strong):
+            f.write(
+                f"ProbabilityStrongBinder: "
+                f"{prob_strong:.2f}\n"
+            )
+        else:
+            f.write(
+                "ProbabilityStrongBinder: NA\n"
+            )
+
+    return {
+        "pred_label": pred_label,
+        "prob_strong": prob_strong,
+        "out_path": out_path,
+    }
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("dir", help="Complex folder containing feature txt files")
-    ap.add_argument("--model", default=None, help="Optional path to naffinity.joblib (defaults to script directory)")
+
+    ap.add_argument(
+        "dir",
+        help="Complex folder containing feature txt files"
+    )
+
+    ap.add_argument(
+        "--model",
+        default=None,
+        help="Optional path to naffinity.joblib "
+             "(defaults to script directory)"
+    )
+
     ap.add_argument(
         "--out",
         default="naffinity_predicted_binding_class.txt",
         help="Output filename written inside the folder",
     )
+
     ap.add_argument(
         "--feature-files",
         nargs="+",
-        default=["descriptors.txt", "rdkit.txt", "receptor_descriptors.txt", "electro_hydro.txt"],
+        default=[
+            "descriptors.txt",
+            "rdkit.txt",
+            "receptor_descriptors.txt",
+            "electro_hydro.txt",
+        ],
         help="Feature txt files to read/merge",
     )
+
     args = ap.parse_args()
 
     folder = os.path.abspath(args.dir)
+
     if not os.path.isdir(folder):
-        print(f"ERROR: Not a directory: {folder}", file=sys.stderr)
+        print(
+            f"ERROR: Not a directory: {folder}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    model_path = os.path.abspath(args.model) if args.model else default_model_path()
-    if not os.path.exists(model_path):
-        print(f"ERROR: Model not found: {model_path}", file=sys.stderr)
-        sys.exit(1)
+    model_path = (
+        os.path.abspath(args.model)
+        if args.model
+        else default_model_path()
+    )
 
     try:
-        X = load_features_from_folder(folder, feature_files=args.feature_files)
+        result = run(
+            folder,
+            model_path=model_path,
+            out=args.out,
+            feature_files=args.feature_files,
+        )
+
     except Exception as e:
-        print(f"ERROR loading features: {e}", file=sys.stderr)
+        print(
+            f"ERROR: {e}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    try:
-        model = joblib.load(model_path)
-    except Exception as e:
-        print(f"ERROR loading model: {e}", file=sys.stderr)
-        sys.exit(1)
+    folder_name = os.path.basename(
+        os.path.normpath(folder)
+    )
 
-    try:
-        pred_int, prob_strong = predict(model, X)
-    except Exception as e:
-        print(f"ERROR during prediction: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    pred_label = "Strong binder" if pred_int == 1 else "Weak/moderate binder"
+    if np.isfinite(result["prob_strong"]):
+        print(
+            f"  P(strong): "
+            f"{result['prob_strong']:.2f}"
+        )
 
-    out_path = os.path.join(folder, args.out)
-    with open(out_path, "w") as f:
-        f.write(f"PredictedClass: {pred_label}\n")
-        if np.isfinite(prob_strong):
-            f.write(f"ProbabilityStrongBinder: {prob_strong:.2f}\n")
-        else:
-            f.write("ProbabilityStrongBinder: NA\n")
-
-    folder_name = os.path.basename(os.path.normpath(folder))
-    print(f"✅ Predicted for {folder_name}")
-    print(f"  Class: {pred_label}")
-    if np.isfinite(prob_strong):
-        print(f"  P(strong): {prob_strong:.2f}")
-    print(f"Wrote: {out_path}")
+    print(
+        f"Wrote: {result['out_path']}"
+    )
 
 
 if __name__ == "__main__":

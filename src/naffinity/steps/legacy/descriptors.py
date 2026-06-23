@@ -28,11 +28,7 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
 from rdkit import RDLogger
 from scipy.spatial import ConvexHull
-import warnings
 
-from Bio.PDB.PDBExceptions import PDBConstructionWarning
-
-warnings.simplefilter("ignore", PDBConstructionWarning)
 
 # --- Settings (kept from your notebook defaults) ---
 BINDING_SITE_RADIUS = 6.0
@@ -107,29 +103,21 @@ def manual_metal_distances(pdb_path, ligand_coords):
 def extract_ligand_mol_from_sd(sd_path):
     suppl = Chem.SDMolSupplier(sd_path, removeHs=False, sanitize=False)
     mol = suppl[0] if suppl and len(suppl) > 0 else None
-
     if mol is None:
         return None
 
+    # suppress noisy RDKit warnings
     try:
         Chem.SanitizeMol(mol)
-
     except Exception:
-
-        try:
-            Chem.SanitizeMol(
-                mol,
-                sanitizeOps=
-                Chem.SanitizeFlags.SANITIZE_ALL ^
-                Chem.SanitizeFlags.SANITIZE_PROPERTIES
-            )
-
-        except Exception:
-            pass
+        for atom in mol.GetAtoms():
+            atom.SetIsAromatic(False)
+        for bond in mol.GetBonds():
+            bond.SetIsAromatic(False)
+        Chem.SanitizeMol(mol)
 
     if mol.GetNumConformers() == 0:
         raise ValueError("Ligand SD has no conformer/coordinates.")
-
     return mol
 
 
@@ -170,44 +158,15 @@ def compute_binding_site_features(ligand_coords, rna_atoms, water_atoms, metal_a
     min_cofactor_dist = min_dist_atoms_to_coords(ligand_coords, cofactor_atoms)
 
     local_residues = {a.get_parent() for a in local_rna_atoms}
-
-    base_counts = {
-        "A": 0,
-        "U": 0,
-        "G": 0,
-        "C": 0,
-        "I": 0,
-    }
-
+    base_counts = {"A": 0, "U": 0, "G": 0, "C": 0, "I": 0}
+    phosphate_contacts = 0  # kept for compatibility with your logic
     phosphate_atoms = []
 
     for res in local_residues:
         base = res.get_resname().strip().upper()
-
         if base in base_counts:
             base_counts[base] += 1
-
-        phosphate_atoms.extend(
-            [
-                a
-                for a in res.get_atoms()
-                if (a.element or "").strip().upper() == "P"
-            ]
-        )
-
-    # --------------------------------------------------
-    # Count ligand-phosphate contacts
-    # --------------------------------------------------
-
-    phosphate_contacts = 0
-
-    if phosphate_atoms and ligand_coords is not None:
-        for la in ligand_coords:
-            for pa in phosphate_atoms:
-                d = np.linalg.norm(la - pa.coord)
-
-                if d <= ELECTROSTATIC_DISTANCE_CUTOFF:
-                    phosphate_contacts += 1
+        phosphate_atoms += [a for a in res.get_atoms() if "P" in a.get_id()]
 
     # simple proximity counts
     hbond_count = sum(
@@ -271,9 +230,7 @@ def compute_binding_site_features(ligand_coords, rna_atoms, water_atoms, metal_a
     }
 
 
-def run(folder, radius=BINDING_SITE_RADIUS):
-    RDLogger.DisableLog("rdApp.*")
-    folder = os.path.abspath(folder)
+def process_single_folder(folder, radius):
     folder_name = os.path.basename(os.path.normpath(folder))
     pdb_path = os.path.join(folder, f"{folder_name}.pdb")
     sd_path = os.path.join(folder, f"{folder_name}_lig.sd")
@@ -340,35 +297,17 @@ def main():
     RDLogger.DisableLog("rdApp.*")
 
     ap = argparse.ArgumentParser()
-
-    ap.add_argument(
-        "dir",
-        help="Directory containing (folder_name).pdb and (folder_name)_lig.sd"
-    )
-
-    ap.add_argument(
-        "--radius",
-        type=float,
-        default=BINDING_SITE_RADIUS,
-        help=f"Binding-site radius in Å (default: {BINDING_SITE_RADIUS})"
-    )
-
-    ap.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite descriptors.txt if it exists"
-    )
-
+    ap.add_argument("dir", help="Directory containing (folder_name).pdb and (folder_name)_lig.sd")
+    ap.add_argument("--radius", type=float, default=BINDING_SITE_RADIUS, help=f"Binding-site radius in Å (default: {BINDING_SITE_RADIUS})")
+    ap.add_argument("--overwrite", action="store_true", help="Overwrite descriptors.txt if it exists")
     args = ap.parse_args()
 
     folder = os.path.abspath(args.dir)
-
     if not os.path.isdir(folder):
         print(f"ERROR: Not a directory: {folder}", file=sys.stderr)
         sys.exit(1)
 
     out_path = os.path.join(folder, "descriptors.txt")
-
     if os.path.exists(out_path) and not args.overwrite:
         folder_name = os.path.basename(os.path.normpath(folder))
         print(f"⏭️ Skipping {folder_name} (descriptors.txt already exists)")
@@ -376,16 +315,15 @@ def main():
         return
 
     try:
-        written = run(
-            folder,
-            radius=args.radius,
-        )
-
+        written = process_single_folder(folder, radius=args.radius)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
     folder_name = os.path.basename(os.path.normpath(folder))
+    print(f"✅ Wrote descriptors.txt for {folder_name}")
+    print(f"Wrote: {written}")
+
 
 if __name__ == "__main__":
     main()

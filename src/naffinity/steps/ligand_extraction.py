@@ -234,62 +234,70 @@ def ligand_group_to_rdkit_mol(lines: List[str]) -> Chem.Mol:
 
     return mol
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("dir", help="Directory containing (folder_name).pdb")
-    ap.add_argument("--ligand-resname", default=None, help="Force ligand residue name (e.g., AMP)")
-    ap.add_argument("--ligand-chain", default=None, help="Force ligand chain ID (e.g., A)")
-    ap.add_argument("--ligand-resid", type=int, default=None, help="Force ligand residue number (e.g., 401)")
-    args = ap.parse_args()
+def run(
+    folder,
+    ligand_resname=None,
+    ligand_chain=None,
+    ligand_resid=None,
+):
+    folder = os.path.abspath(folder)
 
-    folder = os.path.abspath(args.dir)
     if not os.path.isdir(folder):
-        print(f"ERROR: Not a directory: {folder}", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Not a directory: {folder}")
 
     folder_name = os.path.basename(os.path.normpath(folder))
     pdb_path = os.path.join(folder, f"{folder_name}.pdb")
     out_sd = os.path.join(folder, f"{folder_name}_lig.sd")
 
     if not os.path.exists(pdb_path):
-        print(f"ERROR: Expected PDB not found: {pdb_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Expected PDB not found: {pdb_path}")
 
     na_coords, het_groups = parse_pdb_atoms(pdb_path)
-    if not het_groups:
-        print("ERROR: No HETATM residue groups found in the PDB.", file=sys.stderr)
-        sys.exit(1)
 
-    try:
-        best_key, diag = choose_ligand_group(
-            het_groups,
-            na_coords,
-            override_resname=args.ligand_resname,
-            override_chain=args.ligand_chain,
-            override_resid=args.ligand_resid,
-        )
-    except Exception as e:
-        print(f"ERROR selecting ligand: {e}", file=sys.stderr)
-        sys.exit(1)
+    if not het_groups:
+        raise ValueError("No HETATM residue groups found in the PDB.")
+
+    best_key, diag = choose_ligand_group(
+        het_groups,
+        na_coords,
+        override_resname=ligand_resname,
+        override_chain=ligand_chain,
+        override_resid=ligand_resid,
+    )
 
     resname, chain, resid, icode = best_key
     lines = het_groups[best_key]["lines"]
 
-    try:
-        mol = ligand_group_to_rdkit_mol(lines)
-    except Exception as e:
-        print(f"ERROR converting ligand to RDKit mol: {e}", file=sys.stderr)
-        print("Fallback suggestion: write the ligand HETATM block to a .pdb and convert with OpenBabel (obabel) if installed.", file=sys.stderr)
-        sys.exit(1)
+    mol = ligand_group_to_rdkit_mol(lines)
 
     w = Chem.SDWriter(out_sd)
     w.write(mol)
     w.close()
 
-    print(f"Selected ligand: resname={resname} chain={chain} resid={resid} icode={icode}")
-    if "min_dist_to_na" in diag:
-        print(f"  heavy atoms={int(diag.get('heavy_atoms', -1))} minimum distance to receptor={diag.get('min_dist_to_na', -1):.2f} Å")
-    print(f"Wrote: {out_sd}")
+
+
+    return out_sd
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("dir", help="Directory containing (folder_name).pdb")
+    ap.add_argument("--ligand-resname", default=None)
+    ap.add_argument("--ligand-chain", default=None)
+    ap.add_argument("--ligand-resid", type=int, default=None)
+
+    args = ap.parse_args()
+
+    try:
+        run(
+            args.dir,
+            ligand_resname=args.ligand_resname,
+            ligand_chain=args.ligand_chain,
+            ligand_resid=args.ligand_resid,
+        )
+
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -20,15 +20,18 @@ Usage:
 import argparse
 import os
 import sys
-from collections import defaultdict
-from math import cos, radians
+
 
 import numpy as np
 from Bio.PDB import PDBParser
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from scipy.spatial import cKDTree
+import warnings
 
+from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
+warnings.simplefilter("ignore", PDBConstructionWarning)
 
 # Keep this list stable so failures still write a complete file with zeros.
 FEATURE_KEYS = [
@@ -59,6 +62,78 @@ FEATURE_KEYS = [
     "PolarHydrophobicProximityScore",
 ]
 
+RNA_DONORS = {
+    ("A", "N6"),
+    ("G", "N1"),
+    ("G", "N2"),
+    ("C", "N4"),
+    ("U", "N3"),
+    ("I", "N1"),
+    ("DA", "N6"),
+    ("DG", "N1"),
+    ("DG", "N2"),
+    ("DC", "N4"),
+    ("DT", "N3"),
+}
+
+RNA_ACCEPTORS = {
+    ("A", "N1"),
+    ("A", "N3"),
+    ("A", "N7"),
+
+    ("G", "O6"),
+    ("G", "N7"),
+
+    ("C", "O2"),
+
+    ("U", "O2"),
+    ("U", "O4"),
+
+    ("I", "O6"),
+    ("DA", "N1"),
+    ("DA", "N3"),
+    ("DA", "N7"),
+
+    ("DG", "O6"),
+    ("DG", "N7"),
+
+    ("DC", "O2"),
+
+    ("DT", "O2"),
+    ("DT", "O4"),
+}
+
+
+RNA_PARTIAL_CHARGES = {
+
+    "P": 1.0,
+    "OP1": -1.0,
+    "OP2": -1.0,
+    "O1P": -1.0,
+    "O2P": -1.0,
+
+    # ribose oxygens
+    "O2'": -0.40,
+    "O3'": -0.40,
+    "O4'": -0.35,
+    "O5'": -0.35,
+
+    # carbonyl oxygens
+    "O2": -0.50,
+    "O4": -0.50,
+    "O6": -0.50,
+
+    # donor nitrogens
+    "N1": -0.20,
+    "N2": -0.25,
+    "N3": -0.20,
+    "N4": -0.25,
+    "N6": -0.25,
+
+    # aromatic acceptor nitrogens
+    "N7": -0.30,
+    "N9": -0.15,
+}
 
 def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
     feats = {k: 0.0 for k in FEATURE_KEYS}
@@ -72,12 +147,19 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
 
         try:
             Chem.SanitizeMol(mol)
+
         except Exception:
-            for atom in mol.GetAtoms():
-                atom.SetIsAromatic(False)
-            for bond in mol.GetBonds():
-                bond.SetIsAromatic(False)
-            Chem.SanitizeMol(mol)
+
+            try:
+                Chem.SanitizeMol(
+                    mol,
+                    sanitizeOps=
+                    Chem.SanitizeFlags.SANITIZE_ALL ^
+                    Chem.SanitizeFlags.SANITIZE_PROPERTIES
+                )
+
+            except Exception:
+                pass
 
         # Gasteiger charges
         AllChem.ComputeGasteigerCharges(mol)
@@ -85,10 +167,54 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
             raise ValueError("Ligand has no conformer/coordinates in SD.")
 
         lig_coords = mol.GetConformer().GetPositions()
-        lig_charges = [float(atom.GetProp("_GasteigerCharge") or 0.0) for atom in mol.GetAtoms()]
-        lig_elements = [atom.GetSymbol() for atom in mol.GetAtoms()]
-        lig_donors = [a for a in mol.GetAtoms() if a.GetAtomicNum() in (7, 8)]
+        lig_charges = []
+        for atom in mol.GetAtoms():
+            try:
+                q = float(atom.GetProp("_GasteigerCharge"))
 
+                if np.isnan(q) or np.isinf(q):
+                    q = 0.0
+
+            except Exception:
+                q = 0.0
+
+            lig_charges.append(q)
+        lig_elements = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        lig_atoms = list(mol.GetAtoms())
+
+        lig_is_donor = []
+        lig_is_acceptor = []
+
+        for atom in lig_atoms:
+
+            atomic_num = atom.GetAtomicNum()
+
+            try:
+                n_h = atom.GetTotalNumHs()
+            except Exception:
+                n_h = 0
+
+            # Donor: N/O carrying at least one hydrogen
+            is_donor = (
+                atomic_num in (7, 8)
+                and n_h > 0
+            )
+
+            # Acceptor: exclude positively charged donor nitrogens
+            is_acceptor = (
+                atomic_num in (7, 8)
+                and atom.GetFormalCharge() <= 0
+                and not is_donor
+            )
+
+            lig_is_donor.append(is_donor)
+            lig_is_acceptor.append(is_acceptor)
+
+        lig_donors = [
+            a
+            for a, is_donor in zip(lig_atoms, lig_is_donor)
+            if is_donor
+        ]
         # --- Receptor parse ---
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("receptor", pdb_file)
@@ -97,8 +223,25 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
         receptor_coords = []
         receptor_charge_entries = []
 
-        # Fixed per-element proxy charges (your notebook mapping)
-        charge_map = {"O": -0.4, "N": -0.3, "P": 0.2, "S": 0.1, "C": 0.0}
+        def get_rna_partial_charge(atom_name, element):
+
+            atom_name = atom_name.strip().upper()
+            if atom_name.startswith("OP"):
+                return -1.0
+
+            if atom_name in RNA_PARTIAL_CHARGES:
+                return RNA_PARTIAL_CHARGES[atom_name]
+
+            if element == "P":
+                return 1.0
+
+            if element == "O":
+                return -0.35
+
+            if element == "N":
+                return -0.20
+
+            return 0.0
 
         for chain in model:
             for residue in chain:
@@ -106,12 +249,19 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
                     coord = atom.coord
                     element = (atom.element or "").strip().upper()
                     receptor_coords.append(coord)
+                    atom_name = atom.get_name().strip().upper()
+
                     receptor_charge_entries.append(
-                        {
-                            "coord": coord,
-                            "charge": charge_map.get(element, 0.0),
-                            "element": element,
-                        }
+                    {
+                        "coord": coord,
+                        "charge": get_rna_partial_charge(
+                            atom_name,
+                            element
+                        ),
+                        "element": element,
+                        "atom_name": atom_name,
+                        "resname": residue.get_resname().strip().upper(),
+                    }
                     )
 
         if len(receptor_coords) == 0:
@@ -126,7 +276,7 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
 
         electro_energies = []
         charge_products = []
-        dist_weights = []
+        distances = []
         attract_energies = []
         repel_energies = []
         pos_sum = 0.0
@@ -138,12 +288,16 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
         near_donors = 0
         near_acceptors = 0
         polar_surface_contact = 0
-        polar_hydrophobic_contacts = 0
-
+        observed_polar_hydrophobic = set()
+        observed_donors = set()
+        observed_acceptors = set()
+        
         for i, neighbors in enumerate(indices):
             l_coord = lig_coords[i]
             l_charge = lig_charges[i]
             l_element = lig_elements[i]
+            l_is_donor = lig_is_donor[i]
+            l_is_acceptor = lig_is_acceptor[i]
 
             for j in neighbors:
                 r_coord = r_coords[j]
@@ -151,16 +305,19 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
                 r_element = r_entry["element"]
                 r_charge = r_entry["charge"]
 
+                r_atom_name = r_entry["atom_name"]
+                r_resname = r_entry["resname"]
+
                 dist = float(np.linalg.norm(l_coord - r_coord))
                 if dist < 1e-2:
                     continue
-
+                        
                 qprod = l_charge * r_charge
-                energy = qprod / (dist**2)
+                energy = qprod / max(dist, 1e-6)
 
                 electro_energies.append(energy)
                 charge_products.append(qprod)
-                dist_weights.append(1.0 / dist)
+                distances.append(dist)
 
                 if qprod < 0:
                     attract_energies.append(energy)
@@ -175,20 +332,122 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
                 if dist < 2.0:
                     steric_clashes += 1
 
-                # Very simple H-bond proxy from your notebook: any nearby O/N contributes
-                if r_element in {"O", "N"}:
-                    hbond_scores.append(cos(radians(180)) ** 2 / (dist**2))
-                    hbond_distances.append(dist)
+
+                # --------------------------------------------------
+                # Polar-hydrophobic proximity
+                # --------------------------------------------------
+
+                if (
+                    dist <= 4.5
+                    and l_element == "C"
+                    and r_element in {"O", "N"}
+                ):
+                    observed_polar_hydrophobic.add(j)
+
+
+
+
+                # --------------------------------------------------
+                # Plausible hydrogen-bond partner identification
+                # --------------------------------------------------
+
+                receptor_donor = (
+                    (r_resname, r_atom_name)
+                    in RNA_DONORS
+                )
+
+                receptor_acceptor = (
+                    (r_resname, r_atom_name)
+                    in RNA_ACCEPTORS
+                )
+                if dist <= 3.5:
+
+                    if receptor_donor:
+                        observed_donors.add(j)
+
+                    if receptor_acceptor:
+                        observed_acceptors.add(j)
+
+                plausible_hbond = (
+                    (l_is_donor and receptor_acceptor)
+                    or
+                    (l_is_acceptor and receptor_donor)
+                )
+                if plausible_hbond and dist <= 3.5:
+
+                    neighbor_candidates = []
+
+                    for k, other_coord in enumerate(r_coords):
+
+                        if k == j:
+                            continue
+
+                        d_neighbor = np.linalg.norm(
+                            other_coord - r_coord
+                        )
+
+                        if 0.5 < d_neighbor < 2.2:
+                            neighbor_candidates.append(
+                                (d_neighbor, other_coord)
+                            )
+
+                    angle_score = 0.0
+
+                    if neighbor_candidates:
+
+                        neighbor_coord = min(
+                            neighbor_candidates,
+                            key=lambda x: x[0]
+                        )[1]
+
+                        v1 = neighbor_coord - r_coord
+                        v2 = l_coord - r_coord
+
+                        norm1 = np.linalg.norm(v1)
+                        norm2 = np.linalg.norm(v2)
+
+                        if norm1 > 1e-6 and norm2 > 1e-6:
+
+                            cos_theta = np.dot(
+                                v1,
+                                v2
+                            ) / (norm1 * norm2)
+
+                            cos_theta = np.clip(
+                                cos_theta,
+                                -1.0,
+                                1.0
+                            )
+
+                            theta = np.degrees(
+                                np.arccos(cos_theta)
+                            )
+
+                            angle_score = (
+                                np.cos(
+                                    np.radians(
+                                        180.0 - theta
+                                    )
+                                ) ** 2
+                            )
+
+                    hbond_score = (
+                        angle_score /
+                        (dist ** 2)
+                    )
+
+                    hbond_scores.append(
+                        hbond_score
+                    )
+
+                    hbond_distances.append(
+                        dist
+                    )
                     hbond_count += 1
-                    near_acceptors += 1
                     polar_surface_contact += 1
 
-                if r_element == "H":
-                    near_donors += 1
 
-                if r_element in {"O", "N"} and l_element == "C":
-                    polar_hydrophobic_contacts += 1
-
+    
         # --- Write features ---
         feats["MeanLigandReceptorChargeProduct"] = float(np.mean(charge_products)) if charge_products else 0.0
         feats["MinAttractiveElectrostaticEnergy"] = float(min(attract_energies)) if attract_energies else 0.0
@@ -200,10 +459,10 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
             float(np.mean([-1.0 if q < 0 else 1.0 for q in charge_products])) if charge_products else 0.0
         )
 
-        # Keep your notebook behavior (even though algebraically unusual): sum(q / (1/d)) = sum(q * d)
+        # Physically motivated distance-weighted charge interaction
         feats["DistWeightedChargeSum"] = float(
-            sum(q / (1.0 / d) for q, d in zip(charge_products, dist_weights))
-        ) if dist_weights else 0.0
+            sum(q / max(d, 1e-6) for q, d in zip(charge_products, distances))
+        ) if distances else 0.0
 
         feats["NetChargeGradient"] = float(sum(abs(e) for e in electro_energies)) if electro_energies else 0.0
         feats["ElectrostaticVariance"] = float(np.var(electro_energies)) if electro_energies else 0.0
@@ -214,7 +473,8 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
         feats["MeanHbondAngleScore"] = float(np.mean(hbond_scores)) if hbond_scores else 0.0
         feats["MaxHbondAngleScore"] = float(max(hbond_scores)) if hbond_scores else 0.0
         feats["HBondSaturationIndex"] = float(hbond_count / (len(lig_donors) + 1e-6))
-
+        near_donors = len(observed_donors)
+        near_acceptors = len(observed_acceptors)
         feats["NearbyDonors"] = float(near_donors)
         feats["NearbyAcceptors"] = float(near_acceptors)
         feats["BuriedHBondScore"] = float(sum(1 for d in hbond_distances if d < 3.5))
@@ -227,8 +487,9 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
         ) if receptor_charge_entries else 0.0
 
         feats["PolarSurfaceContactCount"] = float(polar_surface_contact)
-        feats["PolarHydrophobicProximityScore"] = float(polar_hydrophobic_contacts)
-
+        feats["PolarHydrophobicProximityScore"] = float(
+            len(observed_polar_hydrophobic)
+        )
         return feats
 
     except Exception as e:
@@ -236,46 +497,129 @@ def compute_features(ligand_file: str, pdb_file: str, radius: float = 6.0):
         print(f"ERROR electro_hydro: {e}", file=sys.stderr)
         return feats
 
+def run(
+    folder,
+    radius=6.0,
+    out="electro_hydro.txt",
+):
+    folder = os.path.abspath(folder)
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("dir", help="Directory containing (folder_name).pdb and (folder_name)_lig.sd")
-    ap.add_argument("--radius", type=float, default=6.0, help="Neighborhood radius in Å (default: 6.0)")
-    ap.add_argument("--out", default="electro_hydro.txt", help="Output filename (default: electro_hydro.txt)")
-    ap.add_argument("--overwrite", action="store_true", help="Overwrite existing output file")
-    args = ap.parse_args()
+    folder_name = os.path.basename(
+        os.path.normpath(folder)
+    )
 
-    folder = os.path.abspath(args.dir)
-    if not os.path.isdir(folder):
-        print(f"ERROR: Not a directory: {folder}", file=sys.stderr)
-        sys.exit(1)
+    pdb_path = os.path.join(
+        folder,
+        f"{folder_name}.pdb"
+    )
 
-    folder_name = os.path.basename(os.path.normpath(folder))
-    pdb_path = os.path.join(folder, f"{folder_name}.pdb")
-    lig_path = os.path.join(folder, f"{folder_name}_lig.sd")
-    out_path = os.path.join(folder, args.out)
+    lig_path = os.path.join(
+        folder,
+        f"{folder_name}_lig.sd"
+    )
+
+    out_path = os.path.join(
+        folder,
+        out
+    )
 
     if not os.path.exists(pdb_path):
-        print(f"ERROR: Missing PDB file: {pdb_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(
+            f"Missing PDB file: {pdb_path}"
+        )
+
     if not os.path.exists(lig_path):
-        print(f"ERROR: Missing ligand SD file: {lig_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(
+            f"Missing ligand SD file: {lig_path}"
+        )
 
-    if os.path.exists(out_path) and not args.overwrite:
-        print(f"⏭️ Skipping {folder_name} ({args.out} already exists)")
-        print(f"Wrote: {out_path}")
-        return
-
-    feats = compute_features(lig_path, pdb_path, radius=args.radius)
+    feats = compute_features(
+        lig_path,
+        pdb_path,
+        radius=radius,
+    )
 
     with open(out_path, "w") as f:
         for k in sorted(feats.keys()):
             f.write(f"{k}: {feats[k]:.4f}\n")
 
-    print(f"✅ Wrote {args.out} for {folder_name}")
-    print(f"Wrote: {out_path}")
+    return out_path
+
+def main():
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument(
+        "dir",
+        help="Directory containing (folder_name).pdb and (folder_name)_lig.sd"
+    )
+
+    ap.add_argument(
+        "--radius",
+        type=float,
+        default=6.0,
+        help="Neighborhood radius in Å (default: 6.0)"
+    )
+
+    ap.add_argument(
+        "--out",
+        default="electro_hydro.txt",
+        help="Output filename (default: electro_hydro.txt)"
+    )
+
+    ap.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing output file"
+    )
+
+    args = ap.parse_args()
+
+    folder = os.path.abspath(args.dir)
+
+    if not os.path.isdir(folder):
+        print(
+            f"ERROR: Not a directory: {folder}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    out_path = os.path.join(
+        folder,
+        args.out,
+    )
+
+    if os.path.exists(out_path) and not args.overwrite:
+        folder_name = os.path.basename(
+            os.path.normpath(folder)
+        )
+
+        print(
+            f"⏭️ Skipping {folder_name} "
+            f"({args.out} already exists)"
+        )
+
+        print(f"Wrote: {out_path}")
+        return
+
+    try:
+        written = run(
+            folder,
+            radius=args.radius,
+            out=args.out,
+        )
+
+    except Exception as e:
+        print(
+            f"ERROR: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    folder_name = os.path.basename(
+        os.path.normpath(folder)
+    )
 
 
 if __name__ == "__main__":
     main()
+
