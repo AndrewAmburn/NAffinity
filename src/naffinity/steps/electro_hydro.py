@@ -43,7 +43,7 @@ FEATURE_KEYS = [
     "ChargeRatioPosNeg",
     "ElectrostaticComplementarity",
     "DistWeightedChargeSum",
-    "NetChargeGradient",
+    "TotalElectrostaticMagnitude",
     "ElectrostaticVariance",
     "StericClashCount",
     "IdealHBondPairCount",

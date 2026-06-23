@@ -23,3 +23,4 @@ PolarSurfaceContactCount: 13.0000
 StericClashCount: 24.0000
 SumNegativeReceptorCharge: -119.3000
 SumPositiveReceptorCharge: 0.0000
+TotalElectrostaticMagnitude: 0.0000

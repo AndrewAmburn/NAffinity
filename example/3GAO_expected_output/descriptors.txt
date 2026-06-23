@@ -14,10 +14,10 @@ NumWaterMolecules: 12.0
 MinDistCofactor: 1.8688123810386577e-08
 NumPhosphateContacts: 0.0
 NumHbondCandidates: 33.0
-NumPiStacking: 4.0
+NumBaseCentroidContacts: 4.0
 BindingPocketVolume: 1060.253951919319
 ElectrostaticScore: 0.0
-LigandSASAProxy: 1.0
+LigandBurialFraction: 1.0
 IsHelixSite: 0.0
 IsLoopSite: 0.0
 IsJunctionSite: 1.0
