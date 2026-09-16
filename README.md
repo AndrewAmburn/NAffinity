@@ -49,7 +49,21 @@ Note: NAffinity does not perform docking internally. Input structures must alrea
 
 ## Reproducibility
 
-**NAffinity includes the complete dataset, train/test split assignments, training scripts, and hyperparameter optimization workflows used in the manuscript.**
+### Figures and tables
+
+The [`figures_and_tables` notebook](figures_and_tables/NAffinity_figures_and_tables_combined_public.ipynb) contains scripts for regenerating the manuscript figures and tables, followed by the supplementary figures and tables. It reads the shared input files from `data/` at the repository root and writes outputs to `figures_and_tables/results/`; change `DATA_DIR` in its first cell if your inputs are stored elsewhere.
+
+```bash
+conda env create -f environment.yml
+conda activate naffinity
+python -m pip install jupyterlab ipykernel matplotlib seaborn shap xgboost openpyxl
+cd figures_and_tables
+jupyter lab NAffinity_figures_and_tables_combined_public.ipynb
+```
+
+Run the cells in order. The shared `data/` folder includes the NAffinity dataset, apo-state and RSAPred comparison inputs, Table S8 training references, and the published Figure 1, Figure S2, and Figure S13 plotting data and the Figure S4 threshold sweep.
+
+**NAffinity includes the complete dataset, train/test split assignments, training scripts, and hyperparameter optimization workflows used in the manuscript. The provided environment pins the software versions used for the reported analyses. Minor numerical differences may still occur across operating systems or hardware architectures, but these should not materially affect the reported results or conclusions.**
 
 ### **Dataset**
 

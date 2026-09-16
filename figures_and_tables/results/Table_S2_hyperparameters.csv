@@ -1,0 +1,7 @@
+Parameter,Search values,Selected value,Selected configuration CV F1 (mean ± SD)
+n_estimators,"100, 200, 300, 400, 500, 600, 700, 900, 1000",300,0.677 ± 0.073
+max_depth,"10, 20, 40, None",10,
+min_samples_split,"2, 5",5,
+min_samples_leaf,"1, 2",2,
+bootstrap,"True, False",False,
+class_weight,"None, balanced, balanced_subsample",balanced,
